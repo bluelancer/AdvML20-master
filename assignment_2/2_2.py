@@ -23,9 +23,10 @@
 """
 
 import numpy as np
-from .Tree import Tree
-from .Tree import Node
+from Tree import Tree
+from Tree import Node
 
+dp = np.zeros ([1,1])
 
 def calculate_likelihood(tree_topology, theta, beta):
     """
@@ -33,21 +34,72 @@ def calculate_likelihood(tree_topology, theta, beta):
     :param: tree_topology: A tree topology. Type: numpy array. Dimensions: (num_nodes, )
     :param: theta: CPD of the tree. Type: numpy array. Dimensions: (num_nodes, K, K)
     :param: beta: A list of node assignments. Type: numpy array. Dimensions: (num_nodes, )
-                Note: Inner nodes are assigned to np.nan. The leaves have values in [K]
     :return: likelihood: The likelihood of beta. Type: float.
 
     This is a suggested template. You don't have to use it.
     """
+    global dp
+    global dp_left
+    global dp_right
 
     # TODO Add your code here
-
     # Start: Example Code Segment. Delete this segment completely before you implement the algorithm.
     print("Calculating the likelihood...")
-    likelihood = np.random.rand()
+    print ("tree_topology",tree_topology)
+    v_parent = tree_topology[len(tree_topology)-1]
+    # if this is a new sample, then len(tree_topology) = len(beta) = num_vertices
+    if len(tree_topology) == len(beta):
+        dp = np.zeros([len(beta),5])
+        n =0
+        for i in beta:
+            if not np.isnan(i):
+                dp[n,int(i)] = 1
+                print (n)
+            n += 1
+        print ("dp_init", dp)
+        dp_left = np.zeros([len(beta),5])
+        dp_right = np.zeros([len(beta),5])
+    if np.isnan(v_parent):
+        print("find Root")
+    else:
+        update_topology = tree_topology[0:len(tree_topology)-2]
+
+        # 𝑝(𝑋𝑣=𝑗|𝑋𝑢=𝑖)
+        # 𝑣 = len(tree_topology) - 1 ; 𝑋𝑜∩↓𝑣 = beta[len(tree_topology) - 1])
+        # P(𝑋𝑢=𝑖 |𝑋pa(𝑢)=𝑗 ) = theta[u][i][j]
+        theta_left = theta[int(len(tree_topology) - 1)][:][int(beta[len(tree_topology) - 1])]
+
+        # 𝑝(𝑋w=𝑗|𝑋𝑢=𝑖)
+        # 𝑤 = len(tree_topology) - 2 ;  𝑋𝑜∩↓𝑤 = beta[len(tree_topology) - 2]
+        theta_right = theta[int(len(tree_topology) - 2)][:][int(beta[len(tree_topology) - 2])]
+
+        for j in range(5):
+            # beta[int(v_parent)]
+            beta[int(v_parent)] = float(j)
+            # 𝑠(𝑣,𝑗) = 𝑝(𝑋𝑜∩↓𝑣|𝑋𝑣=𝑗) = dp[int(v_parent)][j] = calculate_likelihood(update_topology, theta, beta)
+            # parent_prob = 𝑝(𝑋𝑜∩↓𝑣|𝑋𝑢=𝑖) != likelihood, yet we need to update dp with this,
+            a = calculate_likelihood(update_topology, theta, beta)
+            # print ("dp[int(v_parent)]", a[int(v_parent)])
+
+            # dp_left[u] = 𝑝(𝑋𝑜∩↓𝑣|𝑋𝑢=𝑖) = =Σ_j 𝑝(𝑋𝑜∩↓𝑣|𝑋𝑣=𝑗) (dp [][j]) 𝑝(𝑋𝑣=𝑗|𝑋𝑢=𝑖) (theta_left[j])
+            dp_left[int(v_parent)] = dp_left[int(v_parent)] + \
+                                     np.multiply(theta_left[j], a[len(tree_topology) - 1][j])
+            # print ("theta_left[j]",theta_left[j])
+            dp_right[int(v_parent)] = dp_right[int(v_parent)] + \
+                                      np.multiply(theta_right[j], a[len(tree_topology) - 2][j])
+
+        # 𝑠(𝑢, 𝑖) = 𝑝(𝑋𝑜∩↓𝑢|𝑋𝑢=𝑖) = 𝑝(𝑋𝑜∩↓𝑣 | 𝑋𝑢 = 𝑖)𝑝(𝑋𝑜∩↓𝑤 | 𝑋𝑢 = 𝑖) =
+        # Σ_j 𝑝(𝑋𝑜∩↓𝑣|𝑋𝑣=𝑗)𝑝(𝑋𝑣=𝑗|𝑋𝑢=𝑖) * Σ_k 𝑝(𝑋𝑜∩↓𝑤|𝑋𝑤=k)𝑝(𝑋𝑤=k|𝑋𝑢=𝑖)
+        dp_right_left = np.multiply(dp_left[int(v_parent)],dp_right[int(v_parent)])
+
+        dp[int(v_parent)] = dp_right_left
+        print(dp_right_left)
+
+    print ("dp = ", dp)
+    likelihood = np.dot(theta[0], dp[0])
+    print ("likelihood = ",likelihood)
+    return dp
     # End: Example Code Segment
-
-    return likelihood
-
 
 def main():
     print("Hello World!")
@@ -70,7 +122,6 @@ def main():
         print("\n\tSample: ", sample_idx, "\tBeta: ", beta)
         sample_likelihood = calculate_likelihood(t.get_topology_array(), t.get_theta_array(), beta)
         print("\tLikelihood: ", sample_likelihood)
-
 
 if __name__ == "__main__":
     main()
