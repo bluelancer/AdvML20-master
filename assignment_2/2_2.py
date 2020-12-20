@@ -41,6 +41,7 @@ def calculate_likelihood(tree_topology, theta, beta):
     global dp
     global dp_left
     global dp_right
+    global G_topology_list
 
     # TODO Add your code here
     # Start: Example Code Segment. Delete this segment completely before you implement the algorithm.
@@ -59,6 +60,7 @@ def calculate_likelihood(tree_topology, theta, beta):
         print ("dp_init", dp)
         dp_left = np.zeros([len(beta),5])
         dp_right = np.zeros([len(beta),5])
+        G_topology_list = tree_topology.tolist()
     if np.isnan(v_parent):
         print("find Root")
     else:
@@ -66,14 +68,14 @@ def calculate_likelihood(tree_topology, theta, beta):
         for j in range(5):
             # beta[int(v_parent)]
             beta[int(v_parent)] = float(j)
-
+            v_parent_value = int(beta[int(v_parent)])
             # 𝑝(𝑋𝑣=𝑗|𝑋𝑢=𝑖)
             # 𝑣 = len(tree_topology) - 1 ; 𝑋𝑜∩↓𝑣 = beta[len(tree_topology) - 1])
             # P(𝑋𝑢=𝑖 |𝑋pa(𝑢)=𝑗 ) = theta[u][i][j]
-            theta_left = theta[int(len(tree_topology) - 1)][:][int(beta[int(v_parent)])]
+            theta_left = theta[int(len(tree_topology) - 1)][:][v_parent_value]
             # 𝑝(𝑋w=𝑗|𝑋𝑢=𝑖)
             # 𝑤 = len(tree_topology) - 2 ;  𝑋𝑜∩↓𝑤 = beta[len(tree_topology) - 2]
-            theta_right = theta[int(len(tree_topology) - 2)][:][int(beta[int(v_parent)])]
+            theta_right = theta[int(len(tree_topology) - 2)][:][v_parent_value]
 
             # 𝑠(𝑣,𝑗) = 𝑝(𝑋𝑜∩↓𝑣|𝑋𝑣=𝑗) = dp[int(v_parent)][j] = calculate_likelihood(update_topology, theta, beta)
             # parent_prob = 𝑝(𝑋𝑜∩↓𝑣|𝑋𝑢=𝑖) != likelihood, yet we need to update dp with this,
@@ -81,17 +83,20 @@ def calculate_likelihood(tree_topology, theta, beta):
             # print ("dp[int(v_parent)]", a[int(v_parent)])
 
             # dp_left[u] = 𝑝(𝑋𝑜∩↓𝑣|𝑋𝑢=𝑖) = =Σ_j 𝑝(𝑋𝑜∩↓𝑣|𝑋𝑣=𝑗) (dp [][j]) 𝑝(𝑋𝑣=𝑗|𝑋𝑢=𝑖) (theta_left[j])
-            dp_left[int(v_parent)] = dp_left[int(v_parent)] + \
-                                     theta_left[j] * a[len(tree_topology) - 1][j]
+            dp_left[int(v_parent)][v_parent_value] = dp_left[int(v_parent)][v_parent_value] + \
+                                     theta_left[j] * a[G_topology_list.index(v_parent)][j]
+            # TODO: len(tree_topology) - 1 Change int(v_parent).decent
+            print ("left_leaf:",G_topology_list.index(v_parent))
+            print ("right_leaf:",G_topology_list.index(v_parent,G_topology_list.index(v_parent)+1))
             # print ("theta_left[j]",theta_left[j])
-            dp_right[int(v_parent)] = dp_right[int(v_parent)] + \
-                                      theta_right[j] * a[len(tree_topology) - 2][j]
+            dp_right[int(v_parent)][int(beta[int(v_parent)])] = dp_right[int(v_parent)][int(beta[int(v_parent)])] + \
+                                      theta_right[j] * a[G_topology_list.index(v_parent,G_topology_list.index(v_parent)+1)][j]
 
         # 𝑠(𝑢, 𝑖) = 𝑝(𝑋𝑜∩↓𝑢|𝑋𝑢=𝑖) = 𝑝(𝑋𝑜∩↓𝑣 | 𝑋𝑢 = 𝑖)𝑝(𝑋𝑜∩↓𝑤 | 𝑋𝑢 = 𝑖) =
         # Σ_j 𝑝(𝑋𝑜∩↓𝑣|𝑋𝑣=𝑗)𝑝(𝑋𝑣=𝑗|𝑋𝑢=𝑖) * Σ_k 𝑝(𝑋𝑜∩↓𝑤|𝑋𝑤=k)𝑝(𝑋𝑤=k|𝑋𝑢=𝑖)
         dp_right_left = np.multiply(dp_left[int(v_parent)],dp_right[int(v_parent)])
         dp[int(v_parent)] = dp_right_left
-
+        print ("dp_right_left",dp_right_left)
     print ("dp = ", dp)
     likelihood = np.dot(theta[0], dp[0])
     print ("likelihood = ",likelihood)
