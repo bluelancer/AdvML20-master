@@ -26,7 +26,6 @@ import numpy as np
 from Tree import Tree
 from Tree import Node
 
-dp = np.zeros ([1,1])
 
 def calculate_likelihood(tree_topology, theta, beta):
     """
@@ -40,76 +39,113 @@ def calculate_likelihood(tree_topology, theta, beta):
     """
     global dp
     global dp_left
-    global dp_right
     global G_topology_list
+    global child_descendants
+    global descendants
+    global t
+
+    def get_descendants(current_node_idx, tree_topology):
+        descendants = []
+        for i, x in enumerate(tree_topology):
+            if x == current_node_idx:
+                descendants.append(i)
+        return descendants
+
+    def get_child_descendants(tree_topology):
+        child_descendants = []
+        for i in range(len(tree_topology)):
+            descendants = get_descendants(i, tree_topology)
+            if len(descendants) == 2:
+                child_descendants.append((descendants[0], descendants[1]))
+            elif len(descendants) == 1:
+                child_descendants.append((descendants[0], np.nan))
+            else:
+                child_descendants.append((np.nan, np.nan))
+        return child_descendants
+
+    def get_likelihood_for_current_node_idx (child_descendants,current_node_idx,theta,dp):
+        descendants  = child_descendants[current_node_idx]
+        s_u_i_part = []
+        for o in range(5):
+            for i in descendants:
+                s_u_i_part.append(np.dot(theta[i][:][o], dp[i][:]))
+        s_u_i = np.multiply(s_u_i_part[0],s_u_i_part[1])
+        return s_u_i
+
+
 
     # TODO Add your code here
     # Start: Example Code Segment. Delete this segment completely before you implement the algorithm.
     # print("Calculating the likelihood...")
     # print ("tree_topology",tree_topology)
-
     # if this is a new sample, then len(tree_topology) = len(beta) = num_vertices
     if len(tree_topology) == len(beta):
-        dp = np.zeros([len(beta),5])
-        n = 0
-        for i in beta:
-            if not np.isnan(i):
-                dp[n,int(i)] = 1
-                # print (n)
-            n += 1
-        # print ("dp_init", dp)
-        dp_left = np.zeros([len(beta),5])
-        dp_right = np.zeros([len(beta),5])
+        # init
+        # 𝑠(𝑣,𝑗) = 𝑝(𝑋𝑜∩↓𝑣|𝑋𝑣=𝑗) = dp[int(v_parent)][j]
+        dp = np.zeros([len(beta), 5])
+        dp_left = np.ones([len(beta), 5])
         G_topology_list = tree_topology.tolist()
-        tree_topology = tree_topology[1:]
 
-    if len(tree_topology) == 0:
-        pass
-        # print("find leaves")
-        # v_parent = G_topology_list[len(G_topology_list)-1]
+        # print (tree_topology)
+        #t = Tree()
+        #t.load_tree_from_direct_arrays(tree_topology, theta)
+        #nodes = t.root
 
+        # print('after',tree_topology)
+        tree_topology = tree_topology[:-1]
+        child_descendants = get_child_descendants(G_topology_list)
+        descendants = 0
+
+    if descendants == 0:
+
+        # likelihood  = {𝑝(𝑋𝑜∩↓𝑣|𝑋𝑣=𝑗)𝑝(𝑋𝑣=𝑗) | 𝑣=0} = sum(dp[0]*theta[0])
+        # This should be correct :)
+        descendants = child_descendants[0]
+        likelihood = np.dot(calculate_likelihood(tree_topology, theta, beta)[0], theta[0])
+        return likelihood
 
     else:
-        v_parent = tree_topology[0]
-        update_topology = tree_topology[2:]
-        print ("compute dp _i = ",v_parent)
-        _ = calculate_likelihood(update_topology, theta, beta)
+        # for nodes in the child vertex of a parent vertex
+        for descendant in descendants:
 
-        for j in range(5):
-            v_left = G_topology_list.index(v_parent)
-            v_right = G_topology_list.index(v_parent,G_topology_list.index(v_parent)+1)
-            # 𝑝(𝑋𝑣=𝑗|𝑋𝑢=𝑖)
-            # 𝑣 = len(tree_topology) - 1 ; 𝑋𝑜∩↓𝑣 = beta[len(tree_topology) - 1])
-            # P(𝑋𝑢=𝑖 |𝑋pa(𝑢)=𝑗 ) = theta[u][i][j]
-            theta_left = theta[int(v_left)][:][:]
-            # 𝑝(𝑋w=𝑗|𝑋𝑢=𝑖)
-            # 𝑤 = len(tree_topology) - 2 ;  𝑋𝑜∩↓𝑤 = beta[len(tree_topology) - 2]
-            theta_right = theta[int(v_right)][:][:]
+            # the child node index
+            current_node_idx = int(descendant)
+            descendants = child_descendants[current_node_idx]
+            v_parent = int(G_topology_list[current_node_idx])
 
-            # 𝑠(𝑣,𝑗) = 𝑝(𝑋𝑜∩↓𝑣|𝑋𝑣=𝑗) = dp[int(v_parent)][j] = calculate_likelihood(update_topology, theta, beta)
-            # parent_prob = 𝑝(𝑋𝑜∩↓𝑣|𝑋𝑢=𝑖) != likelihood, yet we need to update dp with this,
+            print('current_node_idx, ',current_node_idx, 'descendants, ', descendants,'parent',v_parent )
 
-            # dp_left[u] = 𝑝(𝑋𝑜∩↓𝑣|𝑋𝑢=𝑖) = =Σ_j 𝑝(𝑋𝑜∩↓𝑢|𝑋𝑢=𝑗) (dp_left [u][j]) 𝑝(𝑋𝑣=𝑗|𝑋𝑢=𝑖) (theta[v][j][i])
-            # print ("left_leaf:",G_topology_list.index(v_parent))
-            dp_left[int(v_parent)] = np.add(dp_left[int(v_parent)], \
-                                     np.multiply(theta_left[j], dp[v_left][j]))
-            # print ("right_leaf:",G_topology_list.index(v_parent,G_topology_list.index(v_parent)+1))
-            # print ("theta_left[j]",theta_left[j])
-            dp_right[int(v_parent)] = np.add(dp_right[int(v_parent)], \
-                                                      np.multiply(theta_right[j], dp[v_right][j]))
+            # probability of per child vertex's cdf, on vertex's observation
+            #per = np.zeros([5, 5])
 
-            # 𝑠(𝑢, 𝑖) = 𝑝(𝑋𝑜∩↓𝑢|𝑋𝑢=𝑖) = 𝑝(𝑋𝑜∩↓𝑣 | 𝑋𝑢 = 𝑖)𝑝(𝑋𝑜∩↓𝑤 | 𝑋𝑢 = 𝑖) =
-            # Σ_j 𝑝(𝑋𝑜∩↓𝑣|𝑋𝑣=𝑗)𝑝(𝑋𝑣=𝑗|𝑋𝑢=𝑖) * Σ_k 𝑝(𝑋𝑜∩↓𝑤|𝑋𝑤=k)𝑝(𝑋𝑤=k|𝑋𝑢=𝑖)
+            # current node is not a leaf
+            if np.isnan(beta[current_node_idx]):
 
-        dp_right_left = np.multiply(dp_left[int(v_parent)],dp_right[int(v_parent)])
-        dp[int(v_parent)] = dp_right_left
+                # progress to child's child later
+                descendants = child_descendants[descendant]
 
-    # print ("dp = ", dp)
-    if len(tree_topology) == len(beta) -1:
-        likelihood = np.dot(theta[0], dp[0])
-        print ("likelihood = ",likelihood)
+                # Probability that given a child vertex index, and the observation of child vertex, recurse to it's parent's observation cdf
+                # Given child vertex index: 𝑝(𝑋𝑣=𝑗|𝑋𝑢=𝑖) (theta[v][j][i])
+                #theta_trans = theta[current_node_idx][:][:]
+
+                # computing the per-child's observation (j) cdf, with different parent observation cdf (dp[v_parent]) within dictionary
+                temp = descendants
+                dp = calculate_likelihood(tree_topology, theta, beta)
+                descendants = temp
+
+                dp[current_node_idx][:] = get_likelihood_for_current_node_idx(child_descendants,current_node_idx,theta,dp)
+
+            else:
+                # current node is a leaf
+                # {𝑝(𝑋𝑜∩↓𝑣|𝑋𝑣 = 𝑗)𝑝(𝑋𝑣=𝑗)|𝑣=𝑜∩↓𝑣} = 1
+                print('find leaves', current_node_idx)
+                node_value = beta[current_node_idx]
+                dp[current_node_idx][int(node_value)] = 1
+
+
     return dp
-    # End: Example Code Segment
+
+# End: Example Code Segment
 
 def main():
     print("Hello World!")
