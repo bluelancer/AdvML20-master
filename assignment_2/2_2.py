@@ -64,12 +64,14 @@ def calculate_likelihood(tree_topology, theta, beta):
         return child_descendants
 
     def get_likelihood_for_current_node_idx (child_descendants,current_node_idx,theta,dp):
-        descendants  = child_descendants[current_node_idx]
-        s_u_i_part = []
-        for o in range(5):
-            for i in descendants:
-                s_u_i_part.append(np.dot(theta[i][:][o], dp[i][:]))
-        s_u_i = np.multiply(s_u_i_part[0],s_u_i_part[1])
+        descendants = child_descendants[current_node_idx]
+        s_u_i_part = np.zeros([5])
+        s_u_i_component = []
+        for v in descendants:
+            for i in range(5):
+                s_u_i_part[i] = np.dot(theta[v][:][i], dp[v][:])
+            s_u_i_component.append([s_u_i_part])
+        s_u_i = np.multiply(s_u_i_component[0],s_u_i_component[1])
         return s_u_i
 
 
@@ -101,7 +103,11 @@ def calculate_likelihood(tree_topology, theta, beta):
         # likelihood  = {𝑝(𝑋𝑜∩↓𝑣|𝑋𝑣=𝑗)𝑝(𝑋𝑣=𝑗) | 𝑣=0} = sum(dp[0]*theta[0])
         # This should be correct :)
         descendants = child_descendants[0]
-        likelihood = np.dot(calculate_likelihood(tree_topology, theta, beta)[0], theta[0])
+        temp  = descendants
+        dp = calculate_likelihood(tree_topology, theta, beta)
+        descendants = temp
+        dp[0] = get_likelihood_for_current_node_idx(child_descendants,0,theta,dp)
+        likelihood = np.dot(dp[0], theta[0])
         return likelihood
 
     else:
@@ -120,6 +126,7 @@ def calculate_likelihood(tree_topology, theta, beta):
 
             # current node is not a leaf
             if np.isnan(beta[current_node_idx]):
+                print ('Node is not a leaf', current_node_idx)
 
                 # progress to child's child later
                 descendants = child_descendants[descendant]
@@ -141,7 +148,6 @@ def calculate_likelihood(tree_topology, theta, beta):
                 print('find leaves', current_node_idx)
                 node_value = beta[current_node_idx]
                 dp[current_node_idx][int(node_value)] = 1
-
 
     return dp
 
