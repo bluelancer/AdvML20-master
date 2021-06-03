@@ -65,13 +65,14 @@ def calculate_likelihood(tree_topology, theta, beta):
 
     def get_likelihood_for_current_node_idx (child_descendants,current_node_idx,theta,dp):
         descendants = child_descendants[current_node_idx]
-        s_u_i_part = np.zeros([5])
+        s_u_i= np.ones([5])
+        s_u_i_part = np.zeros([5,5])
         s_u_i_component = []
         for v in descendants:
             for i in range(5):
-                s_u_i_part[i] = np.dot(theta[v][:][i], dp[v][:])
-            s_u_i_component.append([s_u_i_part])
-        s_u_i = np.multiply(s_u_i_component[0],s_u_i_component[1])
+                s_u_i_part[v][i] = np.dot(theta[v][:][i], dp[v][:])
+            for j in range(5):
+                s_u_i[j] *= s_u_i_part[v][j]
         return s_u_i
 
 
