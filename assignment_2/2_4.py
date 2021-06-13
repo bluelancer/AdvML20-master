@@ -284,14 +284,15 @@ def em_algorithm(seed_val, samples, num_clusters, max_num_iter=100):
         T_k,topology_list = MST_k(num_clusters,G_k,num_nodes)
         print ('num_nodes',num_nodes)
         # Stage 5:
-        theta_list = update_theta_list(num_clusters,qk_Xs_prob_cluster_k,qk_Xs_Xt_joint_prob_cluster_k,num_nodes,topology_list)
+        new_theta_list = update_theta_list(num_clusters,qk_Xs_prob_cluster_k,qk_Xs_Xt_joint_prob_cluster_k,num_nodes,topology_list)
+
+      theta_list = new_theta_list
 
 
     loglikelihood = np.array(loglikelihood)
     topology_list = np.array(topology_list)
-    new_theta_list = np.array(theta_list)
+    theta_list = np.array(theta_list)
     # End: Example Code Segment
-    theta_list = new_theta_list
     return loglikelihood, topology_list, theta_list
 
 def main():
