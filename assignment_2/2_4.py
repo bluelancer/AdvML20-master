@@ -42,8 +42,10 @@ import numpy as np
 import matplotlib.pyplot as plt
 import sys
 import math
+import networkx as nx
+# Reference: https://networkx.org/documentation/stable/reference/algorithms/generated/networkx.algorithms.tree.mst.maximum_spanning_tree.html
 
-from Kruskal_v1 import Graph
+
 #from Phylogeny import Phylogeny
 
 def save_results(loglikelihood, topology_array, theta_array, filename):
@@ -73,10 +75,10 @@ def calculate_responsibilities(samples,theta_list, N_data_samples, N_graphical_m
         for node_index in range(len(topology_list_per_tree)):
             parent_sample_value = xn[node_index]
             if node_index == root_index_per_tree:
-                print('root_index_per_tree',root_index_per_tree,'node_index',node_index)
-                print('parent_sample_value',parent_sample_value)
-                print('pTrans_xn_given_root_k', pTrans_xn_given_root_k)
-                print ('xn[node_index]',xn[node_index])
+                #print('root_index_per_tree',root_index_per_tree,'node_index',node_index)
+                #print('parent_sample_value',parent_sample_value)
+                #print('pTrans_xn_given_root_k', pTrans_xn_given_root_k)
+                #print ('xn[node_index]',xn[node_index])
                 likelihood = pTrans_xn_given_root_k[0][parent_sample_value]
             else:
                 child_node_index = int(topology_list_per_tree[node_index])
@@ -101,10 +103,14 @@ def calculate_responsibilities(samples,theta_list, N_data_samples, N_graphical_m
             r_n_k[n, k] = GM_likelihood_xn_k * pi_k
 
             likelihood_of_mixture += r_n_k[n, k]
-            log_likelihood_of_mixture += math.log(likelihood_of_mixture)
+            if likelihood_of_mixture != 0:
+                log_likelihood_of_mixture += math.log(likelihood_of_mixture)
+            else:
+                log_likelihood_of_mixture += 0
 
             sum_likelihood_by_k[n] +=  r_n_k[n, k]
         r_n_k[n,:]  =  r_n_k[n,:] /sum_likelihood_by_k[n]
+        print("sum_likelihood_by_k[n]",sum_likelihood_by_k[n])
     r_n_k += sys.float_info.epsilon
 
     return r_n_k,log_likelihood_of_mixture
@@ -157,7 +163,10 @@ def I_qk_Xs_X_t(num_clusters,qk_Xs_Xt_joint_prob_cluster_k,qk_Xs_prob_cluster_k,
                         else:
                             element = 0
                         elements.append(element)
-                elements_sum[Xs][Xt][k] = np.sum(elements, axis=0)
+                if any(x is 0 for x in elements):
+                    elements_sum[Xs][Xt][k] = 0
+                else:
+                    elements_sum[Xs][Xt][k] = np.sum(elements, axis=0)
                 elements = []
     I_qk_Xs_X_t_cluster_k = elements_sum
     return I_qk_Xs_X_t_cluster_k
@@ -165,27 +174,50 @@ def I_qk_Xs_X_t(num_clusters,qk_Xs_Xt_joint_prob_cluster_k,qk_Xs_prob_cluster_k,
 def generate_G_k(num_clusters,I_qk_Xs_X_t_cluster_k,Xs_len,Xt_len):
     G_k = []
     for k in range(num_clusters):
-        g = Graph(Xs_len)
+        g = nx.Graph()
         for Xs in range(Xs_len):
-            for Xt in range(Xs+1, Xt_len):
-                g.addEdge(Xs,Xt,I_qk_Xs_X_t_cluster_k[Xs][Xt][k])
+            g.add_node(Xs)
+            for Xt in range(Xt_len):
+                g.add_node(Xt)
+                g.add_edge(Xs,Xt)
+                g[Xs][Xt]['weight'] = I_qk_Xs_X_t_cluster_k[Xs][Xt][k]
         G_k.append(g)
     return G_k
 
-
 def MST_k(num_clusters,G_k,Xs_len):
     T_k = []
+    topology_k = []
+
     for k in range(num_clusters):
-        T = np.zeros([Xs_len])
-        edge_list = G_k[k].maximum_spanning_tree()
+        # From https://networkx.org/documentation/stable/reference/algorithms/generated/networkx.algorithms.tree.mst.maximum_spanning_tree.html
+        T = nx.maximum_spanning_tree(G_k[k],weight='weight', algorithm='kruskal', ignore_nan=True)
+        T_k.append(T)
+        T_edge_list = list(T.edges())
+        topology = np.full([len(T_edge_list) + 1], np.nan)
+        for (i,j) in T_edge_list:
+            if i<j:
+                topology[j] = i
+        topology_k.append(topology)
+    return T_k,topology_k
 
 
+def update_theta_list(num_clusters,qk_Xs_prob_cluster_k,qk_Xs_Xt_joint_prob_cluster_k,Xs_len,topology_list):
+    new_theta_list = []
+    for k in range(num_clusters):
+        small_list = []
+        for Xs in range(Xs_len):
+            if Xs == 0:
+                new_theta_list_frag = np.zeros([2])
+                new_theta_list_frag[:] = qk_Xs_prob_cluster_k[Xs,:,k]
 
-
-    pass
-
-def update_theta_list():
-    pass
+            else:
+                new_theta_list_frag = np.zeros([2,2])
+                for k in range(num_clusters):
+                    topology_k = topology_list[k]
+                    new_theta_list_frag = qk_Xs_Xt_joint_prob_cluster_k[Xs,:,int(topology_k[Xs]),:,k]
+            small_list.append(new_theta_list_frag)
+        new_theta_list.append(small_list)
+    return new_theta_list
 
 
 
@@ -238,28 +270,28 @@ def em_algorithm(seed_val, samples, num_clusters, max_num_iter=100):
         # Stage 1: compute responsibility matrix r_n_k
         r_n_k,log_likelihood_of_mixture = calculate_responsibilities(samples,theta_list,num_samples,num_clusters, pi, topology_list)
         loglikelihood.append(log_likelihood_of_mixture)
+
         # Stage 2: set pi_prime
         pi = np.sum(r_n_k,axis=0)/num_samples
+
         # Stage 3:
         qk_Xs_Xt_joint_prob_cluster_k = qk_Xs_Xt(num_clusters,num_nodes,num_nodes,r_n_k,samples)
         qk_Xs_prob_cluster_k = qk_Xs(num_clusters,num_nodes,r_n_k,samples)
         I_qk_Xs_X_t_cluster_k = I_qk_Xs_X_t(num_clusters,qk_Xs_Xt_joint_prob_cluster_k, qk_Xs_prob_cluster_k,num_nodes,num_nodes)
         G_k = generate_G_k(num_clusters, I_qk_Xs_X_t_cluster_k, num_nodes, num_nodes)
-        T_k = MST_k(G_k)
-        # Stage 4: MST
 
-        # print ('nice')
+        # Stage 4: MST
+        T_k,topology_list = MST_k(num_clusters,G_k,num_nodes)
+        print ('num_nodes',num_nodes)
         # Stage 5:
-        theta_list = update_theta_list()
+        theta_list = update_theta_list(num_clusters,qk_Xs_prob_cluster_k,qk_Xs_Xt_joint_prob_cluster_k,num_nodes,topology_list)
 
 
     loglikelihood = np.array(loglikelihood)
     topology_list = np.array(topology_list)
-    theta_list = np.array(theta_list)
+    new_theta_list = np.array(theta_list)
     # End: Example Code Segment
-
-    ###
-
+    theta_list = new_theta_list
     return loglikelihood, topology_list, theta_list
 
 def main():
