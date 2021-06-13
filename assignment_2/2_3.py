@@ -5,12 +5,13 @@ from scipy.special import gamma
 class VI:
     def __init__(self):
         self.a_0 = 0
-        self.b_0 = 1
+        self.b_0 = 100
         self.mu_0 = 0
         self.lambda_0 = 1
         self.iteration = 1000
         self.N = 100 #
         self.data = self.get_gaussian(self.N, 2, 1)
+        self.thresh = 1e-8
 
     # Data Generation
     def get_gaussian(self, N, mu, sigma, seed = 10):
@@ -59,11 +60,19 @@ class VI:
         self.mu_N = self.update_mu(self.lambda_0, self.mu_0, self.N, self.data) # Correct
         self.lambda_N = self.update_lambda(self.lambda_0,self.a_0,self.b_0,self.N) # Correct
         self.b_N = self.update_b(self.b_0, self.lambda_0,self.data,self.lambda_N,self.mu_0,self.mu_N) # b_star = 1e-6
+        lambda_prev = self.lambda_0
+        b_prev  = self.b_0
         # print(gamma(self.a_N))
 
         for i in range(self.iteration):
-            self.b_N = self.update_b(self.b_0, self.lambda_0, self.data, self.lambda_N, self.mu_0, self.mu_N)
-            self.lambda_N = self.update_lambda(self.lambda_0, self.a_N, self.b_N, self.N)
+            if (abs(self.lambda_N-lambda_prev) > self.thresh) or (abs(self.b_N-b_prev) > self.thresh):
+                lambda_prev = self.lambda_N
+                b_prev = self.b_N
+                self.b_N = self.update_b(self.b_0, self.lambda_0, self.data, self.lambda_N, self.mu_0, self.mu_N)
+                self.lambda_N = self.update_lambda(self.lambda_0, self.a_N, self.b_N, self.N)
+            else:
+                break
+
             # print ("b_N = ", self.b_N)
             # print ("lambda_N = ",self.lambda_N)
 
@@ -116,7 +125,7 @@ class VI:
         plt.figure()
         plt.contour(mu_polt,tau_polt,q_approx,colors = "b")
         plt.contour(mu_polt,tau_polt,posterior, colors = "r")
-        plt.savefig("2_3")
+        plt.savefig("2_3_2")
 
         return q_approx, posterior
 

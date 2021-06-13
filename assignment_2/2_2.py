@@ -66,7 +66,7 @@ def calculate_likelihood(tree_topology, theta, beta):
     def get_likelihood_for_current_node_idx (child_descendants,current_node_idx,theta,dp):
         descendants = child_descendants[current_node_idx]
         s_u_i= np.ones([5])
-        s_u_i_part = np.zeros([5,5])
+        s_u_i_part = np.zeros([len(theta),5])
         s_u_i_component = []
         for v in descendants:
             for i in range(5):
@@ -120,14 +120,14 @@ def calculate_likelihood(tree_topology, theta, beta):
             descendants = child_descendants[current_node_idx]
             v_parent = int(G_topology_list[current_node_idx])
 
-            print('current_node_idx, ',current_node_idx, 'descendants, ', descendants,'parent',v_parent )
+            #print('current_node_idx, ',current_node_idx, 'descendants, ', descendants,'parent',v_parent )
 
             # probability of per child vertex's cdf, on vertex's observation
             #per = np.zeros([5, 5])
 
             # current node is not a leaf
             if np.isnan(beta[current_node_idx]):
-                print ('Node is not a leaf', current_node_idx)
+                #print ('Node is not a leaf', current_node_idx)
 
                 # progress to child's child later
                 descendants = child_descendants[descendant]
@@ -146,7 +146,7 @@ def calculate_likelihood(tree_topology, theta, beta):
             else:
                 # current node is a leaf
                 # {𝑝(𝑋𝑜∩↓𝑣|𝑋𝑣 = 𝑗)𝑝(𝑋𝑣=𝑗)|𝑣=𝑜∩↓𝑣} = 1
-                print('find leaves', current_node_idx)
+                #print('find leaves', current_node_idx)
                 node_value = beta[current_node_idx]
                 dp[current_node_idx][int(node_value)] = 1
 
@@ -160,7 +160,7 @@ def main():
 
     print("\n1. Load tree data from file and print it\n")
 
-    filename ="data/q2_2/q2_2_small_tree.pkl"  # "data/q2_2/q2_2_small_tree.pkl"  # "data/q2_2/q2_2_medium_tree.pkl", "data/q2_2/q2_2_large_tree.pkl"
+    filename ="data/q2_2/q2_2_large_tree.pkl"  # "data/q2_2/q2_2_small_tree.pkl"  # "data/q2_2/q2_2_medium_tree.pkl", "data/q2_2/q2_2_large_tree.pkl"
     t = Tree()
     t.load_tree(filename)
     t.print()

@@ -40,7 +40,11 @@
     """
 import numpy as np
 import matplotlib.pyplot as plt
+import sys
+import math
 
+from Kruskal_v1 import Graph
+#from Phylogeny import Phylogeny
 
 def save_results(loglikelihood, topology_array, theta_array, filename):
     """ This function saves the log-likelihood vs iteration values,
@@ -54,6 +58,135 @@ def save_results(loglikelihood, topology_array, theta_array, filename):
     np.save(likelihood_filename, loglikelihood)
     np.save(topology_array_filename, topology_array)
     np.save(theta_array_filename, theta_array)
+
+def calculate_responsibilities(samples,theta_list, N_data_samples, N_graphical_models, pi, topology_list):
+    r_n_k = np.zeros([N_data_samples, N_graphical_models])
+    sum_likelihood_by_k = np.zeros([N_data_samples])
+    def find_root(topology_list_k):
+        root_index = 0
+        for i in range(len(topology_list_k)):
+            if np.isnan(topology_list_k[i]):
+                root_index = i
+        return int(root_index)
+
+    def per_GM_likelihood(xn, pTrans_xn_given_root_k, root_index_per_tree, topology_list_per_tree):
+        for node_index in range(len(topology_list_per_tree)):
+            parent_sample_value = xn[node_index]
+            if node_index == root_index_per_tree:
+                print('root_index_per_tree',root_index_per_tree,'node_index',node_index)
+                print('parent_sample_value',parent_sample_value)
+                print('pTrans_xn_given_root_k', pTrans_xn_given_root_k)
+                print ('xn[node_index]',xn[node_index])
+                likelihood = pTrans_xn_given_root_k[0][parent_sample_value]
+            else:
+                child_node_index = int(topology_list_per_tree[node_index])
+                child_sample_value = xn[child_node_index]
+                likelihood *= pTrans_xn_given_root_k[node_index][child_sample_value][parent_sample_value]
+
+        return likelihood
+
+    log_likelihood_of_mixture = 0
+    for n in range(N_data_samples):
+        likelihood_of_mixture = 0
+        for k in range(N_graphical_models):
+            pi_k = pi[k]
+            theta_k = theta_list[k]
+            xn = samples[n]
+            topology_list_k = topology_list[k]
+
+            root_index_k = find_root(topology_list_k)
+#            pTrans_xn_given_root_k = theta_k[root_index_k][xn[root_index_k]]
+
+            GM_likelihood_xn_k = per_GM_likelihood(xn, theta_k, root_index_k, topology_list_k)
+            r_n_k[n, k] = GM_likelihood_xn_k * pi_k
+
+            likelihood_of_mixture += r_n_k[n, k]
+            log_likelihood_of_mixture += math.log(likelihood_of_mixture)
+
+            sum_likelihood_by_k[n] +=  r_n_k[n, k]
+        r_n_k[n,:]  =  r_n_k[n,:] /sum_likelihood_by_k[n]
+    r_n_k += sys.float_info.epsilon
+
+    return r_n_k,log_likelihood_of_mixture
+
+def qk_Xs_Xt (num_clusters,Xs_len,Xt_len,r_n_k,samples):
+    nominator = []
+    denominator = np.sum(r_n_k, axis=0)
+    qk_Xs_Xt_joint_prob_cluster_k = np.zeros([Xs_len,2,Xt_len,2,num_clusters])
+
+    for Xs in range(Xs_len):
+        for Xt in range(Xt_len):
+            for a in range(2):
+                for b in range(2):
+                    for n in range(len(samples)):
+                        if samples[n][Xs] == a and samples[n][Xt] == b:
+                            nominator.append(r_n_k[n])
+                        nominator_sum = np.sum(nominator, axis=0)
+                        qk_Xs_Xt_joint_prob_cluster_k[Xs][a][Xt][b][:] = nominator_sum/denominator
+                        nominator =[]
+    return qk_Xs_Xt_joint_prob_cluster_k
+
+def qk_Xs(num_clusters,Xs_len,r_n_k,samples):
+    qk_Xs_prob_cluster_k = np.zeros([Xs_len,2,num_clusters])
+    nominator = []
+    denominator = np.sum(r_n_k, axis=0)
+
+    for Xs in range(Xs_len):
+        for a in range(2):
+            for n in range(len(samples)):
+                if samples[n][Xs] == a:
+                    nominator.append(r_n_k[n])
+                nominator_sum = np.sum(nominator, axis=0)
+                qk_Xs_prob_cluster_k[Xs][a][:] = nominator_sum / denominator
+                nominator = []
+    return qk_Xs_prob_cluster_k
+
+
+def I_qk_Xs_X_t(num_clusters,qk_Xs_Xt_joint_prob_cluster_k,qk_Xs_prob_cluster_k,Xs_len,Xt_len):
+    elements = []
+    elements_sum = np.zeros([Xs_len,Xt_len,num_clusters])
+    for Xs in range(Xs_len):
+        for Xt in range(Xt_len):
+            for k in range(num_clusters):
+                for a in range(2):
+                    for b in range(2):
+                        if qk_Xs_Xt_joint_prob_cluster_k[Xs][a][Xt][b][k] != 0:
+                            element = qk_Xs_Xt_joint_prob_cluster_k[Xs][a][Xt][b][k] * \
+                                      math.log(qk_Xs_Xt_joint_prob_cluster_k[Xs][a][Xt][b][k]/
+                                                    (qk_Xs_prob_cluster_k[Xs][a][k] * qk_Xs_prob_cluster_k[Xt][b][k]))
+                        else:
+                            element = 0
+                        elements.append(element)
+                elements_sum[Xs][Xt][k] = np.sum(elements, axis=0)
+                elements = []
+    I_qk_Xs_X_t_cluster_k = elements_sum
+    return I_qk_Xs_X_t_cluster_k
+
+def generate_G_k(num_clusters,I_qk_Xs_X_t_cluster_k,Xs_len,Xt_len):
+    G_k = []
+    for k in range(num_clusters):
+        g = Graph(Xs_len)
+        for Xs in range(Xs_len):
+            for Xt in range(Xs+1, Xt_len):
+                g.addEdge(Xs,Xt,I_qk_Xs_X_t_cluster_k[Xs][Xt][k])
+        G_k.append(g)
+    return G_k
+
+
+def MST_k(num_clusters,G_k,Xs_len):
+    T_k = []
+    for k in range(num_clusters):
+        T = np.zeros([Xs_len])
+        edge_list = G_k[k].maximum_spanning_tree()
+
+
+
+
+    pass
+
+def update_theta_list():
+    pass
+
 
 
 def em_algorithm(seed_val, samples, num_clusters, max_num_iter=100):
@@ -79,22 +212,46 @@ def em_algorithm(seed_val, samples, num_clusters, max_num_iter=100):
     # Start: Example Code Segment. Delete this segment completely before you implement the algorithm.
     print("Running EM algorithm...")
 
-    loglikelihood = []
-
-    for iter_ in range(max_num_iter):
-        loglikelihood.append(np.log((1 + iter_) / max_num_iter))
-
-    from Tree import TreeMixture
-    tm = TreeMixture(num_clusters=num_clusters, num_nodes=samples.shape[1])
-    tm.simulate_pi(seed_val=seed_val)
-    tm.simulate_trees(seed_val=seed_val)
-    tm.sample_mixtures(num_samples=samples.shape[0], seed_val=seed_val)
-
+    pi = []
     topology_list = []
     theta_list = []
+    likelihood = []
+    loglikelihood = []
+
+
+    num_samples = samples.shape[0]
+    num_nodes = samples.shape[1]
+
+    from Tree import TreeMixture
+
+    tm = TreeMixture(num_clusters=num_clusters, num_nodes=num_nodes)
+    tm.simulate_pi(seed_val=seed_val)
+    tm.simulate_trees(seed_val=seed_val)
+    tm.sample_mixtures(num_samples=num_samples, seed_val=seed_val)
+
     for i in range(num_clusters):
         topology_list.append(tm.clusters[i].get_topology_array())
         theta_list.append(tm.clusters[i].get_theta_array())
+        pi.append (tm.pi[i])
+
+    for iter_ in range(max_num_iter):
+        # Stage 1: compute responsibility matrix r_n_k
+        r_n_k,log_likelihood_of_mixture = calculate_responsibilities(samples,theta_list,num_samples,num_clusters, pi, topology_list)
+        loglikelihood.append(log_likelihood_of_mixture)
+        # Stage 2: set pi_prime
+        pi = np.sum(r_n_k,axis=0)/num_samples
+        # Stage 3:
+        qk_Xs_Xt_joint_prob_cluster_k = qk_Xs_Xt(num_clusters,num_nodes,num_nodes,r_n_k,samples)
+        qk_Xs_prob_cluster_k = qk_Xs(num_clusters,num_nodes,r_n_k,samples)
+        I_qk_Xs_X_t_cluster_k = I_qk_Xs_X_t(num_clusters,qk_Xs_Xt_joint_prob_cluster_k, qk_Xs_prob_cluster_k,num_nodes,num_nodes)
+        G_k = generate_G_k(num_clusters, I_qk_Xs_X_t_cluster_k, num_nodes, num_nodes)
+        T_k = MST_k(G_k)
+        # Stage 4: MST
+
+        # print ('nice')
+        # Stage 5:
+        theta_list = update_theta_list()
+
 
     loglikelihood = np.array(loglikelihood)
     topology_list = np.array(topology_list)
@@ -104,7 +261,6 @@ def em_algorithm(seed_val, samples, num_clusters, max_num_iter=100):
     ###
 
     return loglikelihood, topology_list, theta_list
-
 
 def main():
     print("Hello World!")
